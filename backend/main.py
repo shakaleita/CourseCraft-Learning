@@ -110,5 +110,24 @@ def completion(enrolment_id:int):
              if info['finished'] else None)
         return info
 
+from pydantic import Field
+class SetProgress(BaseModel):
+    completed:int=Field(ge=0,le=10000)
+
+@app.put('/api/enrolments/{enrolment_id}/progress')
+def set_progress(enrolment_id:int,payload:SetProgress):
+    """Set an exact lesson count, safely repeatable after network retries."""
+    with db() as con:
+        con.execute('BEGIN IMMEDIATE')
+        current=con.execute("""SELECT e.completed,c.lessons FROM enrolments e JOIN courses c
+             ON c.id=e.course_id WHERE e.id=?""",(enrolment_id,)).fetchone()
+        if not current:raise HTTPException(404,'Enrolment not found')
+        if payload.completed>current['lessons']:
+            raise HTTPException(422,'Progress cannot exceed total lessons')
+        if payload.completed<current['completed']:
+            raise HTTPException(409,'Progress cannot go backwards')
+        con.execute('UPDATE enrolments SET completed=? WHERE id=?',(payload.completed,enrolment_id))
+        return dict(con.execute('SELECT * FROM enrolments WHERE id=?',(enrolment_id,)).fetchone())
+
 from security import install_auth
 install_auth(app,DB)
