@@ -68,3 +68,14 @@ def test_v06_audit_record_and_cross_site_guard():
     assert client.get('/api/auth/audit',params={'limit':201}).status_code==422
     blocked=client.post('/api/__audit_probe_404',headers={'sec-fetch-site':'cross-site'})
     assert blocked.status_code==403
+
+def test_explicit_progress_is_retry_safe_and_monotonic():
+    course=client.post('/api/items',json={'title':'Resumable course','instructor':'QA','lessons':4}).json()
+    enrol=client.post('/api/enrol',json={'course_id':course['id'],'student':'Student Retry'}).json()
+    endpoint=f"/api/enrolments/{enrol['id']}/progress"
+    assert client.put(endpoint,json={'completed':3}).json()['completed']==3
+    assert client.put(endpoint,json={'completed':3}).json()['completed']==3
+    assert client.put(endpoint,json={'completed':2}).status_code==409
+    assert client.put(endpoint,json={'completed':5}).status_code==422
+    assert client.put(endpoint,json={'completed':4}).json()['completed']==4
+    assert client.get(f"/api/enrolments/{enrol['id']}/completion").json()['finished']
