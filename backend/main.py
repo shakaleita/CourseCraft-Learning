@@ -95,3 +95,20 @@ def unenrol(enrolment_id: int):
         if not con.execute('DELETE FROM enrolments WHERE id=?',(enrolment_id,)).rowcount:
             raise HTTPException(404,'Enrolment not found')
 
+
+import hashlib
+@app.get('/api/enrolments/{enrolment_id}/completion')
+def completion(enrolment_id:int):
+    with db() as con:
+        record=con.execute("""SELECT e.id,e.student,e.completed,c.id AS course_id,c.title,c.lessons
+            FROM enrolments e JOIN courses c ON c.id=e.course_id WHERE e.id=?""",(enrolment_id,)).fetchone()
+        if not record:raise HTTPException(404,'Enrolment not found')
+        info=dict(record)
+        info['progress_percent']=round(info['completed']*100/info['lessons'],1)
+        info['finished']=info['completed']>=info['lessons']
+        info['demo_certificate_id']=(hashlib.sha256(f"{info['id']}:{info['course_id']}:{info['student']}".encode()).hexdigest()[:16]
+             if info['finished'] else None)
+        return info
+
+from security import install_auth
+install_auth(app,DB)

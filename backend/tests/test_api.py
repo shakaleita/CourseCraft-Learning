@@ -5,9 +5,12 @@ from fastapi.testclient import TestClient
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 temp = tempfile.mkdtemp(prefix='portfolio-test-')
 os.environ['APP_DB']=str(Path(temp)/'test.db')
+os.environ['OWNER_SETUP_TOKEN']='test-only-setup-token-1234567890123'
 if 'main' in sys.modules: del sys.modules['main']
 from main import app
 client=TestClient(app)
+assert client.post('/api/auth/register',json={'username':'qaowner','password':'DemoPassword123!','setup_token':'test-only-setup-token-1234567890123'}).status_code==201
+assert client.post('/api/auth/login',json={'username':'qaowner','password':'DemoPassword123!'}).status_code==200
 
 def test_health():
     r=client.get('/api/health')
@@ -38,3 +41,18 @@ def test_course_completion_and_unenrol():
     assert client.delete(f'/api/enrolments/{eid}').status_code==204
     assert client.get(f'/api/courses/{cid}/report').json()['enrolled']==0
 
+
+
+def test_v05_course_completion():
+    course=client.post('/api/items',json={'title':'Engineering Basics','instructor':'Demo Instructor','lessons':2}).json()
+    enrol=client.post('/api/enrol',json={'course_id':course['id'],'student':'Example Student'}).json()
+    assert client.get(f"/api/enrolments/{enrol['id']}/completion").json()['finished'] is False
+    client.patch(f"/api/enrolments/{enrol['id']}")
+    client.patch(f"/api/enrolments/{enrol['id']}")
+    outcome=client.get(f"/api/enrolments/{enrol['id']}/completion").json()
+    assert outcome['finished'] and outcome['demo_certificate_id']
+
+def test_v05_authentication():
+    with TestClient(app) as anonymous:
+        assert anonymous.get('/api/items').status_code==401
+        assert anonymous.post('/api/auth/register',json={'username':'intruder','password':'DemoPassword123!','setup_token':'bad'}).status_code==403
